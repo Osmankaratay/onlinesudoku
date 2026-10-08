@@ -1,0 +1,188 @@
+export const DIFFICULTY_SETTINGS = {
+  easy: { label: 'Easy', emptyCells: 36 },
+  medium: { label: 'Medium', emptyCells: 40 },
+  hard: { label: 'Hard', emptyCells: 45 },
+  veryHard: { label: 'Very Hard', emptyCells: 50 },
+  expert: { label: 'Expert', emptyCells: 55 },
+  pro: { label: 'Pro', emptyCells: 62 },
+};
+
+const SIZE = 9;
+
+const cloneBoard = (board) => board.map((row) => [...row]);
+
+const shuffle = (items) => {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
+};
+
+const isValidPlacement = (board, row, col, value) => {
+  for (let i = 0; i < SIZE; i += 1) {
+    if (board[row][i] === value && i !== col) return false;
+    if (board[i][col] === value && i !== row) return false;
+  }
+
+  const boxRow = Math.floor(row / 3) * 3;
+  const boxCol = Math.floor(col / 3) * 3;
+
+  for (let r = boxRow; r < boxRow + 3; r += 1) {
+    for (let c = boxCol; c < boxCol + 3; c += 1) {
+      if (r !== row && c !== col && board[r][c] === value) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+};
+
+const findEmptyCell = (board) => {
+  for (let row = 0; row < SIZE; row += 1) {
+    for (let col = 0; col < SIZE; col += 1) {
+      if (board[row][col] === 0) return [row, col];
+    }
+  }
+  return null;
+};
+
+const fillBoard = (board) => {
+  const nextEmpty = findEmptyCell(board);
+  if (!nextEmpty) return true;
+
+  const [row, col] = nextEmpty;
+  const candidates = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+  for (const value of candidates) {
+    if (isValidPlacement(board, row, col, value)) {
+      board[row][col] = value;
+      if (fillBoard(board)) return true;
+      board[row][col] = 0;
+    }
+  }
+
+  return false;
+};
+
+export const generateSolvedBoard = () => {
+  const board = Array.from({ length: SIZE }, () => Array(SIZE).fill(0));
+  fillBoard(board);
+  return board;
+};
+
+const countSolutions = (board, limit = 2) => {
+  let solutionCount = 0;
+
+  const backtrack = (currentBoard) => {
+    if (solutionCount >= limit) return;
+
+    const nextEmpty = findEmptyCell(currentBoard);
+    if (!nextEmpty) {
+      solutionCount += 1;
+      return;
+    }
+
+    const [row, col] = nextEmpty;
+    const values = shuffle([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+    for (const value of values) {
+      if (isValidPlacement(currentBoard, row, col, value)) {
+        currentBoard[row][col] = value;
+        backtrack(currentBoard);
+        currentBoard[row][col] = 0;
+        if (solutionCount >= limit) return;
+      }
+    }
+  };
+
+  backtrack(board);
+  return solutionCount;
+};
+
+export const generatePuzzle = (difficulty = 'easy') => {
+  const solvedBoard = generateSolvedBoard();
+  const targetEmptyCells = DIFFICULTY_SETTINGS[difficulty]?.emptyCells ?? DIFFICULTY_SETTINGS.easy.emptyCells;
+  const puzzleBoard = cloneBoard(solvedBoard);
+  const positions = shuffle(Array.from({ length: SIZE * SIZE }, (_, index) => index));
+
+  let removed = 0;
+
+  for (const index of positions) {
+    if (removed >= targetEmptyCells) break;
+
+    const row = Math.floor(index / SIZE);
+    const col = index % SIZE;
+    const originalValue = puzzleBoard[row][col];
+    puzzleBoard[row][col] = 0;
+
+    if (countSolutions(cloneBoard(puzzleBoard), 2) !== 1) {
+      puzzleBoard[row][col] = originalValue;
+    } else {
+      removed += 1;
+    }
+  }
+
+  if (removed < targetEmptyCells) {
+    for (let row = 0; row < SIZE; row += 1) {
+      for (let col = 0; col < SIZE; col += 1) {
+        if (removed >= targetEmptyCells) break;
+        if (puzzleBoard[row][col] !== 0) {
+          const originalValue = puzzleBoard[row][col];
+          puzzleBoard[row][col] = 0;
+          if (countSolutions(cloneBoard(puzzleBoard), 2) === 1) {
+            removed += 1;
+          } else {
+            puzzleBoard[row][col] = originalValue;
+          }
+        }
+      }
+      if (removed >= targetEmptyCells) break;
+    }
+  }
+
+  return {
+    puzzle: puzzleBoard,
+    solution: solvedBoard,
+  };
+};
+
+export const validateMove = (board, solution, row, col, value) => {
+  const nextValue = Number(value);
+
+  if (Number.isNaN(nextValue)) {
+    return { ok: false, reason: 'Value must be a number.' };
+  }
+
+  if (nextValue === 0) {
+    return { ok: true, reason: 'Cell cleared.' };
+  }
+
+  if (solution[row][col] === nextValue) {
+    return { ok: true, reason: 'Correct move.' };
+  }
+
+  return { ok: false, reason: 'Incorrect value for this cell.' };
+};
+
+export const calculateScore = (
+  rank,
+  firstFinishTimestampMs,
+  currentFinishTimestampMs,
+  maxScoreOverride = null,
+  minScoreOverride = null,
+  deltaSecondsOverride = null,
+) => {
+  if (rank === 1) return 100;
+
+  const effectiveMax = maxScoreOverride ?? (100 - 5 * (rank - 1));
+  const effectiveMin = minScoreOverride ?? (100 - 20 * (rank - 1));
+  const deltaMs = Math.max(0, currentFinishTimestampMs - firstFinishTimestampMs);
+  const deltaSeconds = deltaSecondsOverride ?? deltaMs / 1000;
+  const penaltyWindow = 120;
+  const ratio = Math.min(1, deltaSeconds / penaltyWindow);
+  const interpolated = effectiveMax - (effectiveMax - effectiveMin) * ratio;
+  return Math.max(effectiveMin, interpolated);
+};
